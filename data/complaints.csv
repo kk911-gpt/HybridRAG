@@ -1,0 +1,21 @@
+complaint,category
+"My order hasn't arrived in 2 weeks",Shipping
+"I was charged twice for one order",Billing
+"The product I received is damaged",Refund/Return
+"App keeps crashing on checkout",Technical
+"Tracking number shows no updates for 5 days",Shipping
+"I got charged but the order shows as cancelled",Billing
+"Received the wrong size item",Refund/Return
+"Website is not loading on mobile",Technical
+"Package was marked delivered but I never got it",Shipping
+"My refund hasn't been processed in 10 days",Billing
+"The item arrived broken in the box",Refund/Return
+"Cannot reset my password, link is broken",Technical
+"Courier left package outside without notice",Shipping
+"I was charged in a different currency than expected",Billing
+"Want to exchange item for a different color",Refund/Return
+"Payment page freezes during checkout",Technical
+"Order shows delivered to wrong address",Shipping
+"Subscription renewed without my consent",Billing
+"Half my order is missing from the package",Refund/Return
+"App logs me out every few minutes",Technical
