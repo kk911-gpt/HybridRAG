@@ -3,3 +3,6 @@ venv/
 __pycache__/
 *.pyc
 .streamlit/
+chromadb_store/
+data/complaints_processed.csv
+data/customer_support_tickets.csv

@@ -1,7 +1,14 @@
-# HybridRAG — Customer Complaint Classifier
 
-An intelligent customer complaint classification system built using **Hybrid Retrieval-Augmented Generation (RAG)** — combining semantic search (FAISS) and keyword search (BM25) with structured LLM output via Groq.
+## 🔍 ComplaintIQ — Financial Complaint Classifier
 
+v2.0 — Now powered by 15,000 real CFPB complaints stored in ChromaDB persistent vector store.
+
+### What's new in v2.0
+- Replaced 20 fake complaints with 15,000 real CFPB complaints
+- Replaced FAISS (in-memory) with ChromaDB (persistent disk storage)
+- 5 real financial categories instead of 4 generic ones
+- Balanced dataset (3,000 per category)
+- Added load_chromadb.py for one-time data ingestion
 ---
 
 ## Live Demo
