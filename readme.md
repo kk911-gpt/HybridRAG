@@ -342,7 +342,9 @@ python src/load_chromadb.py
 # 6. Run the app
 streamlit run src/app.py
 ```
-
+## 🚀 Live Demo
+👉 **[Try it live: hybridrag-67.streamlit.app](https://hybridrag-67.streamlit.app/)**
+> Full version with 15,000 CFPB complaints runs locally
 ---
 
 ## 📈 Version History
