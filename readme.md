@@ -366,10 +366,10 @@ streamlit run src/app.py
 - [x] Multi-agent pipeline with LangGraph
 - [x] Action agents with mock tool calls
 - [x] Professional response generation
-- [ ] LangSmith observability and tracing
-- [ ] Re-ranking layer with cross-encoder
-- [ ] Streaming responses
-- [ ] Deploy to Streamlit Cloud
+- [x] LangSmith observability and tracing
+- [x] Re-ranking layer with cross-encoder
+- [x] Streaming responses
+- [x]Deploy to Streamlit Cloud
 
 ---
 

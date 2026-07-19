@@ -15,6 +15,11 @@ from rank_bm25 import BM25Okapi
 
 load_dotenv()
 
+# LangSmith tracing — automatically traces all LLM calls
+os.environ["LANGCHAIN_TRACING_V2"] = os.getenv("LANGCHAIN_TRACING_V2", "false")
+os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY", "")
+os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGCHAIN_PROJECT", "ComplaintIQ")
+
 # ============================================================
 # STEP 1: Define the State
 # This is the tray that carries data between all agents
