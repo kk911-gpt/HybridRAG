@@ -1,5 +1,5 @@
-# app.py v3
-# Full agentic pipeline with LangGraph + Streamlit
+# app.py v4.1
+# Full agentic pipeline with LangGraph + Re-ranking + LangSmith
 
 import os
 import random
@@ -12,11 +12,11 @@ import pandas as pd
 import chromadb
 from langchain_huggingface import HuggingFaceEmbeddings
 from rank_bm25 import BM25Okapi
+from sentence_transformers import CrossEncoder
 import streamlit as st
 
 load_dotenv()
 
-# LangSmith tracing — automatically traces all LLM calls
 os.environ["LANGCHAIN_TRACING_V2"] = os.getenv("LANGCHAIN_TRACING_V2", "false")
 os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY", "")
 os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGCHAIN_PROJECT", "ComplaintIQ")
@@ -43,12 +43,13 @@ class ClassificationOutput(BaseModel):
     confidence: Literal["high", "medium", "low"]
     reasoning: str = Field(description="One sentence explaining the classification")
 
-# ---------- Load pipeline (cached) ----------
+# ---------- Load pipeline ----------
 @st.cache_resource
 def load_pipeline():
     embedding_model = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
+
     client = chromadb.PersistentClient(path="./chromadb_store")
     collection = client.get_collection("complaints")
 
@@ -63,23 +64,30 @@ def load_pipeline():
         sampled = cat_df.sample(min(len(cat_df), 3000), random_state=42)
         balanced_parts.append(sampled)
     df_balanced = pd.concat(balanced_parts).reset_index(drop=True)
+
     complaints = df_balanced["complaint"].tolist()
     categories = df_balanced["category"].tolist()
     tokenized = [c.lower().split() for c in complaints]
     bm25 = BM25Okapi(tokenized)
 
-    llm = ChatGroq(model="llama-3.1-8b-instant", groq_api_key=os.getenv("GROQ_API_KEY"))
+    llm = ChatGroq(
+        model="llama-3.1-8b-instant",
+        groq_api_key=os.getenv("GROQ_API_KEY")
+    )
     structured_llm = llm.with_structured_output(ClassificationOutput)
 
-    return embedding_model, collection, complaints, categories, bm25, llm, structured_llm
+    reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+    return embedding_model, collection, complaints, categories, bm25, llm, structured_llm, reranker
 
 # ---------- Hybrid search ----------
-def hybrid_search(query, embedding_model, collection, complaints, categories, bm25, k=3):
+def hybrid_search(query, embedding_model, collection, complaints, categories, bm25, k=10):
     query_vector = embedding_model.embed_query(query)
     chroma_results = collection.query(
         query_embeddings=[query_vector],
-        n_results=k * 3
+        n_results=k * 2
     )
+
     semantic_scores = {}
     for i, doc in enumerate(chroma_results["documents"][0]):
         distance = chroma_results["distances"][0][i]
@@ -95,17 +103,37 @@ def hybrid_search(query, embedding_model, collection, complaints, categories, bm
         combined[complaint] = 0.5 * semantic_score + 0.5 * bm25_score
 
     top_complaints = sorted(combined, key=combined.get, reverse=True)[:k]
+
     results = []
     for complaint in top_complaints:
         idx = complaints.index(complaint)
-        results.append({"complaint": complaint, "category": categories[idx], "score": combined[complaint]})
+        results.append({
+            "complaint": complaint,
+            "category": categories[idx],
+            "score": combined[complaint]
+        })
     return results
 
+# ---------- Re-rank ----------
+def rerank(query, candidates, reranker, top_k=3):
+    pairs = [[query, c["complaint"]] for c in candidates]
+    scores = reranker.predict(pairs)
+    for i, candidate in enumerate(candidates):
+        candidate["rerank_score"] = float(scores[i])
+    reranked = sorted(candidates, key=lambda x: x["rerank_score"], reverse=True)
+    return reranked[:top_k]
+
 # ---------- Build LangGraph ----------
-def build_graph(embedding_model, collection, complaints, categories, bm25, llm, structured_llm):
+def build_graph(embedding_model, collection, complaints, categories, bm25, llm, structured_llm, reranker):
 
     def classifier_agent(state):
-        top_results = hybrid_search(state["complaint"], embedding_model, collection, complaints, categories, bm25)
+        top_results = hybrid_search(
+            state["complaint"],
+            embedding_model, collection,
+            complaints, categories, bm25, k=10
+        )
+        top_results = rerank(state["complaint"], top_results, reranker, top_k=3)
+
         context = ""
         for r in top_results:
             context += f"- Complaint: {r['complaint'][:150]}\n  Category: {r['category']}\n\n"
@@ -152,12 +180,12 @@ Write a professional empathetic response in 2-3 sentences mentioning the referen
 
 # ---------- UI ----------
 st.title("🔍 ComplaintIQ")
-st.markdown("Agentic financial complaint classifier — 3 AI agents working in sequence.")
+st.markdown("Agentic financial complaint classifier — 3 AI agents + hybrid retrieval + re-ranking.")
 st.divider()
 
-with st.spinner("Loading models..."):
-    embedding_model, collection, complaints, categories, bm25, llm, structured_llm = load_pipeline()
-    pipeline = build_graph(embedding_model, collection, complaints, categories, bm25, llm, structured_llm)
+with st.spinner("Loading models and re-ranker..."):
+    embedding_model, collection, complaints, categories, bm25, llm, structured_llm, reranker = load_pipeline()
+    pipeline = build_graph(embedding_model, collection, complaints, categories, bm25, llm, structured_llm, reranker)
 
 st.success(f"Ready — {collection.count():,} complaints in knowledge base")
 
@@ -181,7 +209,6 @@ if st.button("Run Agent Pipeline", type="primary"):
 
         st.divider()
 
-        # Agent 1 results
         st.subheader("🤖 Agent 1 — Classifier")
         col1, col2 = st.columns(2)
         category_icons = {
@@ -189,7 +216,11 @@ if st.button("Run Agent Pipeline", type="primary"):
             "credit_reporting": "📊", "mortgages_and_loans": "🏠",
             "debt_collection": "📞"
         }
-        confidence_display = {"high": "🟢 High", "medium": "🟡 Medium", "low": "🔴 Low"}
+        confidence_display = {
+            "high": "🟢 High",
+            "medium": "🟡 Medium",
+            "low": "🔴 Low"
+        }
         with col1:
             icon = category_icons.get(result['category'], "📌")
             st.metric("Category", f"{icon} {result['category'].replace('_',' ').title()}")
@@ -198,23 +229,21 @@ if st.button("Run Agent Pipeline", type="primary"):
         st.info(f"**Reasoning:** {result['reasoning']}")
 
         st.divider()
-
-        # Agent 2 results
         st.subheader("⚡ Agent 2 — Action")
         st.success(f"**Action taken:** {result['action_taken']}")
         st.code(f"Reference Number: {result['reference_number']}")
 
         st.divider()
-
-        # Agent 3 results
         st.subheader("💬 Agent 3 — Customer Response")
         st.write(result['final_response'])
 
         st.divider()
-
-        # Retrieved context
-        st.subheader("📚 Retrieved Context")
-        top_results = hybrid_search(complaint_input, embedding_model, collection, complaints, categories, bm25)
+        st.subheader("📚 Retrieved Context (after re-ranking)")
+        top_results = hybrid_search(
+            complaint_input, embedding_model,
+            collection, complaints, categories, bm25, k=10
+        )
+        top_results = rerank(complaint_input, top_results, reranker, top_k=3)
         for i, r in enumerate(top_results):
-            with st.expander(f"Match {i+1} — [{r['category']}] (score: {r['score']:.4f})"):
+            with st.expander(f"Match {i+1} — [{r['category']}] (rerank score: {r['rerank_score']:.4f})"):
                 st.write(r['complaint'][:300] + "...")

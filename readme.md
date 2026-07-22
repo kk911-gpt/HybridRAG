@@ -370,6 +370,7 @@ streamlit run src/app.py
 - [x] Re-ranking layer with cross-encoder
 - [x] Streaming responses
 - [x]Deploy to Streamlit Cloud
+- [x] Re-ranking layer with cross-encoder
 
 ---
 
